@@ -47,20 +47,21 @@ class TargetSelector:
         shortest_distance, closest_person = min(distances, key=lambda x: x[0])
         return shortest_distance, closest_person
 
+
 # Example usage
-selector = TargetSelector()
-coordinates = [
-        (1, 2, 'R'),   # Robot
-    (4, 6, 'P'),   # Person
-    (7, 8, 'P'),   # Person
-    (2, 3, 'P'),   # Person
-    (5, 5, 'P'),   # Person
-    (9, 1, 'P'),   # Person
-    (6, 7, 'P'),   # Person
-    (3, 4, 'P'),   # Person
-    (8, 2, 'P'),   # Person
-    (0, 0, None)   # Null ID
-]
-shortest_distance, closest_person = selector.get_shortest_distance(coordinates, 'R', 'P', None)
-print(f"The shortest distance is: {shortest_distance}")
-print(f"The coordinates of the closest person are: {closest_person}")
+# selector = TargetSelector()
+# coordinates = [
+#         (1, 2, 'R'),   # Robot
+#     (4, 6, 'P'),   # Person
+#     (7, 8, 'P'),   # Person
+#     (2, 3, 'P'),   # Person
+#     (5, 5, 'P'),   # Person
+#     (9, 1, 'P'),   # Person
+#     (6, 7, 'P'),   # Person
+#     (3, 4, 'P'),   # Person
+#     (8, 2, 'P'),   # Person
+#     (0, 0, None)   # Null ID
+# ]
+# shortest_distance, closest_person = selector.get_shortest_distance(coordinates, 'R', 'P', None)
+# print(f"The shortest distance is: {shortest_distance}")
+# print(f"The coordinates of the closest person are: {closest_person}")
