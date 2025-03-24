@@ -1,0 +1,11 @@
+<Fallback>
+  <!-- Ensure safety at all times -->
+  <Parallel failure_count="1" success_count="1">
+    <SubTree ID="MainTask"/>
+    <BumperActivated/>
+    <EmergencyStopActivated/>
+  </Parallel>
+
+  <!-- If interrupted, return to charge station -->
+  <GoToChargeStation/>
+</Fallback>

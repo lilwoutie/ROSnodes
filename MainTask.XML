@@ -1,0 +1,48 @@
+<BehaviorTree ID="MainTask">
+  <Sequence>
+    <DetectPeople/>
+    <Script name="SelectTarget" code=""/>
+    <Script name="GoToTarget" code=""/>
+
+    <Fallback>
+      <Sequence>
+        <ScriptCondition name="TargetReached" code=""/>
+        <QuizPrompt/>
+      </Sequence>
+      <Script name="SelectNewTarget" code=""/>
+    </Fallback>
+
+    <Sequence>
+      <Timeout msec="">
+        <Sequence>
+          <ScriptCondition name="QuizAccepted" code=""/>
+          <Script name="SetCriticalTaskActive" code="true"/>
+          <Sequence>
+            <Script name="QuizActiveFlag" code=""/>
+            <Script name="GoToQuiz" code=""/>
+            <Script name="StartQuiz" code=""/>
+            <Script name="WaitForQuizEnd" code=""/>
+          </Sequence>
+          <Script name="SetCriticalTaskActive" code="false"/>
+        </Sequence>
+      </Timeout>
+    </Sequence>
+
+    <!-- Regular battery checks (only when not in critical tasks) -->
+    <Fallback>
+      <Sequence>
+        <Timer msec="60000">  <!-- Check battery every 60s -->
+          <BatteryLow/>
+        </Timer>
+        <ScriptCondition name="NotInCriticalTask" code=""/>
+        <GoToChargeStation/>
+      </Sequence>
+      <Script name="SelectNewTarget" code=""/>
+    </Fallback>
+
+    <Fallback>
+      <ScriptCondition name="TargetAvailable" code=""/>
+      <Sleep msec=""/>
+    </Fallback>
+  </Sequence>
+</BehaviorTree>

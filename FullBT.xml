@@ -1,0 +1,94 @@
+<root BTCPP_format="4" main_tree_to_execute="BatteryTree">
+  <BehaviorTree ID="BatteryTree">
+    <Fallback>
+      <Sequence>
+        <Timer>
+          <BatteryAboveTreshold/>
+        </Timer>
+
+        <!-- Safety checks: If either Bumper or Emergency Stop is activated, stop execution -->
+        <Parallel failure_count="1" success_count="1">
+          <BumperActivated/>
+          <EmergencyStopActivated/>
+        </Parallel>
+
+        <!-- Main task execution with continuous safety monitoring -->
+        <Parallel failure_count="1" success_count="1">
+          <SubTree ID="MainTask"/>
+          <BumperActivated/>
+          <EmergencyStopActivated/>
+        </Parallel>
+      </Sequence>
+
+      <!-- If battery is low and no critical task is running, go charge -->
+      <Sequence>
+        <BatteryLow/>
+        <ScriptCondition name="NotInCriticalTask" code=""/>
+        <GoToChargeStation/>
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+
+  <!-- Main Task Behavior -->
+  <BehaviorTree ID="MainTask">
+    <Sequence>
+      <DetectPeople/>
+      <Script name="SelectTarget" code=""/>
+      <Script name="GoToTarget" code=""/>
+
+      <Fallback>
+        <Sequence>
+          <ScriptCondition name="TargetReached" code=""/>
+          <QuizPrompt/>
+        </Sequence>
+        <Script name="SelectNewTarget" code=""/>
+      </Fallback>
+
+      <Sequence>
+        <Timeout msec="">
+          <Sequence>
+            <ScriptCondition name="QuizAccepted" code=""/>
+            <Script name="SetCriticalTaskActive" code="true"/>
+            <Sequence>
+              <Script name="QuizActiveFlag" code=""/>
+              <Script name="GoToQuiz" code=""/>
+              <Script name="StartQuiz" code=""/>
+              <Script name="WaitForQuizEnd" code=""/>
+            </Sequence>
+            <Script name="SetCriticalTaskActive" code="false"/>
+          </Sequence>
+        </Timeout>
+      </Sequence>
+
+      <!-- Battery check every 5 minutes (300,000 milliseconds) -->
+      <Fallback>
+        <Sequence>
+          <Timer msec="300000">  <!-- Check battery every 5 min -->
+            <BatteryLow/>
+          </Timer>
+          <ScriptCondition name="NotInCriticalTask" code=""/>
+          <GoToChargeStation/>
+        </Sequence>
+        <Script name="SelectNewTarget" code=""/>
+      </Fallback>
+
+      <Fallback>
+        <ScriptCondition name="TargetAvailable" code=""/>
+        <Sleep msec=""/>
+      </Fallback>
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- Description of Node Models (used by Groot) -->
+  <TreeNodesModel>
+    <Condition ID="BatteryAboveTreshold" editable="true"/>
+    <Condition ID="BatteryLow" editable="true"/>
+    <Condition ID="BumperActivated" editable="true"/>
+    <Condition ID="EmergencyStopActivated" editable="true"/>
+    <Action ID="DetectPeople" editable="true"/>
+    <Action ID="GoToChargeStation" editable="true"/>
+    <Action ID="QuizPrompt" editable="true"/>
+    <Action ID="Sleep" editable="true"/>
+    <Decorator ID="Timer" editable="true"/>
+  </TreeNodesModel>
+</root>
