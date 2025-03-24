@@ -42,6 +42,42 @@ class Nav2ActionClient(Node):
         self._send_goal_future = self._action_client.send_goal_async(goal_msg, feedback_callback=self.feedback_callback)
         self._send_goal_future.add_done_callback(self.goal_response_callback)
 
+    def send_goal(self, x_increment, y_increment, theta_increment):
+        if self.current_position is None:
+            self.get_logger().info('Current position not available yet.')
+            return
+
+        self.get_logger().info('Waiting for action server...')
+        self._action_client.wait_for_server()
+
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose = PoseStamped()
+        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.pose.header.frame_id = 'map'
+        goal_msg.pose.pose.position.x = self.current_position.position.x + x_increment
+        goal_msg.pose.pose.position.y = self.current_position.position.y + y_increment
+        goal_msg.pose.pose.position.z = 0.0
+
+        from geometry_msgs.msg import Quaternion
+        q = Quaternion()
+        q.z = math.sin((self.get_yaw_from_quaternion(self.current_position.orientation) + theta_increment) / 2.0)
+        q.w = math.cos((self.get_yaw_from_quaternion(self.current_position.orientation) + theta_increment) / 2.0)
+        goal_msg.pose.pose.orientation = q
+
+        self.get_logger().info('Sending goal...')
+        self._send_goal_future = self._action_client.send_goal_async(goal_msg, feedback_callback=self.feedback_callback)
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
+
+    def get_yaw_from_quaternion(self, quaternion):
+        import tf_transformations
+        euler = tf_transformations.euler_from_quaternion([
+            quaternion.x,
+            quaternion.y,
+            quaternion.z,
+            quaternion.w
+        ])
+        return euler[2]
+
     def goal_response_callback(self, future):
         self._current_goal_handle = future.result()
         if not self._current_goal_handle.accepted:
