@@ -1,4 +1,5 @@
 import math
+import random
 
 class TargetSelector:
     def __init__(self):
@@ -42,26 +43,40 @@ class TargetSelector:
     def get_shortest_distance(self, coordinates, robot_id, person_id, null_id):
         distances = self.process_coordinates(coordinates, robot_id, person_id, null_id)
         if not distances:
+            # If no robot ID is present, return the first person's coordinates
+            first_person = next((target for target in self.targets if target['id'] == person_id), None)
+            if first_person:
+                return None, first_person
             return None, None
 
         shortest_distance, closest_person = min(distances, key=lambda x: x[0])
         return shortest_distance, closest_person
 
+    def get_random_person_coordinate(self, person_id):
+        """
+        Returns a random coordinate of a person with the given ID.
+        If no person with the given ID is found, returns None.
+        """
+        person_points = [target for target in self.targets if target['id'] == person_id]
+        if not person_points:
+            return None
+        return random.choice(person_points)
+
 
 # Example usage
-# selector = TargetSelector()
-# coordinates = [
-#         (1, 2, 'R'),   # Robot
-#     (4, 6, 'P'),   # Person
-#     (7, 8, 'P'),   # Person
-#     (2, 3, 'P'),   # Person
-#     (5, 5, 'P'),   # Person
-#     (9, 1, 'P'),   # Person
-#     (6, 7, 'P'),   # Person
-#     (3, 4, 'P'),   # Person
-#     (8, 2, 'P'),   # Person
-#     (0, 0, None)   # Null ID
-# ]
-# shortest_distance, closest_person = selector.get_shortest_distance(coordinates, 'R', 'P', None)
-# print(f"The shortest distance is: {shortest_distance}")
-# print(f"The coordinates of the closest person are: {closest_person}")
+selector = TargetSelector()
+coordinates = [
+    (1, 2, 'R'),   # Robot
+    (4, 6, 'P'),   # Person
+    (7, 8, 'P'),   # Person
+    (2, 3, 'P'),   # Person
+    (5, 5, 'P'),   # Person
+    (9, 1, 'P'),   # Person
+    (6, 7, 'P'),   # Person
+    (3, 4, 'P'),   # Person
+    (8, 2, 'P'),   # Person
+    (0, 0, None)   # Null ID
+]
+shortest_distance, closest_person = selector.get_shortest_distance(coordinates, 'R', 'P', None)
+print(f"The shortest distance is: {shortest_distance}")
+print(f"The coordinates of the closest person are: {closest_person}")
