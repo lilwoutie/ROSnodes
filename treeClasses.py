@@ -348,61 +348,75 @@ class BatteryLow(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.FAILURE
 
 
-class DetectPeople(py_trees.behaviour.Behaviour):
-    """Detect people in the environment"""
-    def __init__(self, name="DetectPeople"):
-        super(DetectPeople, self).__init__(name)
-        
+class DetectPeopleSubscriber(py_trees.behaviour.Behaviour):
+    def __init__(self, name="DetectPeopleSubscriber"):
+        super(DetectPeopleSubscriber, self).__init__(name)
+        self.node = None
+        self.subscription = None
+        self.detected_people = []
+
+    def setup(self, **kwargs):
+        self.node = kwargs.get('node')
+        if self.node is None:
+            self.logger.error("No ROS node provided to DetectPeopleSubscriber")
+            return False
+        self.subscription = self.node.create_subscription(
+            DetectedPeopleMsg,  # Replace with the actual message type
+            '/detected_people',
+            self.callback,
+            10
+        )
+        return True
+
+    def callback(self, msg):
+        self.detected_people = msg.people  # Replace with actual message field
+
     def update(self):
-        # Simulate detecting people (should be replaced with actual perception)
-        # For now, just pretend we detected people
-        blackboard = py_trees.blackboard.Blackboard()
-        
-        # Simulate finding people
-        detected_people = [
-            {"id": 1, "pose_x": 3.0, "pose_y": 4.0},
-            {"id": 2, "pose_x": -2.0, "pose_y": 5.0}
-        ]
-        
-        if detected_people:
-            blackboard.set("detected_people", detected_people)
-            self.logger.info(f"Detected {len(detected_people)} people")
+        if self.detected_people:
+            blackboard = py_trees.blackboard.Blackboard()
+            blackboard.set("detected_people", self.detected_people)
+            self.logger.info(f"Detected {len(self.detected_people)} people")
             return py_trees.common.Status.SUCCESS
         else:
             self.logger.info("No people detected")
             return py_trees.common.Status.FAILURE
 
 
-class SelectTarget(py_trees.behaviour.Behaviour):
-    """Select a target person from detected people"""
-    def __init__(self, name="SelectTarget"):
-        super(SelectTarget, self).__init__(name)
-        
+class SelectTargetService(py_trees.behaviour.Behaviour):
+    def __init__(self, name="SelectTargetService"):
+        super(SelectTargetService, self).__init__(name)
+        self.node = None
+        self.client = None
+
+    def setup(self, **kwargs):
+        self.node = kwargs.get('node')
+        if self.node is None:
+            self.logger.error("No ROS node provided to SelectTargetService")
+            return False
+        self.client = self.node.create_client(SelectTargetServiceMsg, '/select_target')  # Replace with actual service type
+        return self.client.wait_for_service(timeout_sec=5.0)
+
     def update(self):
         blackboard = py_trees.blackboard.Blackboard()
         detected_people = blackboard.get("detected_people", [])
-        
         if not detected_people:
             self.logger.warning("No people to select from")
             return py_trees.common.Status.FAILURE
-            
-        # For this example, just select the first person
-        selected_person = detected_people[0]
-        
-        # Create a target pose
-        target_pose = PoseStamped()
-        target_pose.header.frame_id = "map"
-        target_pose.pose.position.x = selected_person["pose_x"]
-        target_pose.pose.position.y = selected_person["pose_y"]
-        target_pose.pose.position.z = 0.0
-        target_pose.pose.orientation.w = 1.0  # Default orientation
-        
-        # Set the selected target in the blackboard
-        blackboard.set("selected_person", selected_person)
-        blackboard.set("target_pose", target_pose)
-        
-        self.logger.info(f"Selected person {selected_person['id']} at ({selected_person['pose_x']}, {selected_person['pose_y']})")
-        return py_trees.common.Status.SUCCESS
+
+        # Call the service
+        request = SelectTargetServiceMsg.Request()
+        request.people = detected_people  # Replace with actual request field
+        future = self.client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future)
+        response = future.result()
+
+        if response and response.success:
+            blackboard.set("selected_person", response.selected_person)
+            self.logger.info(f"Selected person {response.selected_person.id}")
+            return py_trees.common.Status.SUCCESS
+        else:
+            self.logger.warning("Target selection failed")
+            return py_trees.common.Status.FAILURE
 
 
 class TargetReached(py_trees.behaviour.Behaviour):
@@ -428,23 +442,17 @@ class QuizPrompt(py_trees.behaviour.Behaviour):
     """Prompt a quiz for the target person"""
     def __init__(self, name="QuizPrompt"):
         super(QuizPrompt, self).__init__(name)
-        
+
     def update(self):
-        # In a real system, this would trigger a user interface or speech
         blackboard = py_trees.blackboard.Blackboard()
-        selected_person = blackboard.get("selected_person", None)
-        
-        if selected_person is None:
-            self.logger.warning("No selected person for quiz")
+        quiz_active = blackboard.get("quiz_active", False)
+
+        if quiz_active:
+            self.logger.info("Quiz is active")
+            return py_trees.common.Status.SUCCESS
+        else:
+            self.logger.warning("Quiz is not active")
             return py_trees.common.Status.FAILURE
-            
-        self.logger.info(f"Prompting quiz for person {selected_person['id']}")
-        
-        # Set a flag to indicate quiz is active
-        blackboard.set("quiz_active", True)
-        
-        # For this example, just succeed immediately
-        return py_trees.common.Status.SUCCESS
 
 
 class SelectNewTarget(py_trees.behaviour.Behaviour):
@@ -550,9 +558,12 @@ def create_battery_subtree():
 def create_main_task_subtree():
     """Create the main robot task subtree"""
     # Detect people and select target
-    detect_people = DetectPeople()
-    select_target = SelectTarget()
+    detect_people = DetectPeopleSubscriber()
+    select_target = SelectTargetService()
     go_to_target = GoToTarget()
+
+    # Quiz state subscriber
+    quiz_state_subscriber = QuizStateSubscriber()
 
     # Target reached check with timeout
     target_reached = TargetReached()
@@ -574,8 +585,8 @@ def create_main_task_subtree():
 
     # Main task sequence
     main_sequence = py_trees.composites.Sequence(name="MainSequence")
-    main_sequence.add_children([detect_people, select_target, go_to_target, quiz_fallback])
-    
+    main_sequence.add_children([quiz_state_subscriber, detect_people, select_target, go_to_target, quiz_fallback])
+
     return main_sequence
 
 
