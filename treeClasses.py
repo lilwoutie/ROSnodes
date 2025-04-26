@@ -186,33 +186,95 @@ class GoToSafeLocation(NavigationBehavior):
         super(GoToSafeLocation, self).__init__(name=name, pose_x=pose_x, pose_y=pose_y)
 
 
-class GoToTarget(NavigationBehavior):
+class GoToTarget(py_trees.behaviour.Behaviour):
     """
-    Navigate to a target person
+    Navigate to a target person using Nav2's NavigateToPose action.
     """
     def __init__(self, name="GoToTarget"):
-        # Initial values will be updated from blackboard
-        super(GoToTarget, self).__init__(name=name, pose_x=0.0, pose_y=0.0)
-        
+        super(GoToTarget, self).__init__(name)
+        self.node = None
+        self.nav_action_client = None
+        self.goal_handle = None
+        self.result_future = None
+
+    def setup(self, **kwargs):
+        """
+        Setup the ROS 2 node and action client for Nav2.
+        """
+        self.node = kwargs.get('node')
+        if self.node is None:
+            self.logger.error("No ROS node provided to GoToTarget")
+            return False
+
+        # Create the action client for NavigateToPose
+        self.nav_action_client = ActionClient(
+            self.node,
+            NavigateToPose,
+            '/navigate_to_pose'
+        )
+
+        # Wait for the action server to be available
+        self.logger.info("Waiting for Nav2 action server...")
+        return self.nav_action_client.wait_for_server(timeout_sec=5.0)
+
     def initialise(self):
         """
-        Get target coordinates from blackboard before navigation
+        Get the target pose from the blackboard and send the navigation goal.
         """
         blackboard = py_trees.blackboard.Blackboard()
         target_pose = blackboard.get("target_pose", None)
-        
-        if target_pose is not None:
-            self.pose_x = target_pose.pose.position.x
-            self.pose_y = target_pose.pose.position.y
-            self.pose_z = target_pose.pose.position.z
-            self.quat_x = target_pose.pose.orientation.x
-            self.quat_y = target_pose.pose.orientation.y
-            self.quat_z = target_pose.pose.orientation.z
-            self.quat_w = target_pose.pose.orientation.w
-            self.frame_id = target_pose.header.frame_id
-            
-        # Call parent initialise to start navigation
-        super(GoToTarget, self).initialise()
+
+        if target_pose is None:
+            self.logger.error("No target pose found in blackboard")
+            self.feedback_message = "No target pose found"
+            return
+
+        # Create the NavigateToPose goal message
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose = target_pose
+
+        # Send the goal to the Nav2 action server
+        self.logger.info(f"Sending navigation goal to ({target_pose.pose.position.x}, {target_pose.pose.position.y})")
+        self.result_future = self.nav_action_client.send_goal_async(goal_msg)
+        self.result_future.add_done_callback(self.goal_response_callback)
+
+    def update(self):
+        """
+        Check the status of the navigation goal.
+        """
+        if self.result_future is None:
+            self.logger.debug("Waiting for goal to be accepted")
+            return py_trees.common.Status.RUNNING
+
+        if self.result_future.done():
+            goal_handle = self.result_future.result()
+            if not goal_handle.accepted:
+                self.logger.error("Goal was rejected by the Nav2 action server")
+                return py_trees.common.Status.FAILURE
+
+            self.logger.info("Goal accepted by the Nav2 action server")
+            self.result_future = goal_handle.get_result_async()
+            return py_trees.common.Status.RUNNING
+
+        if self.result_future.done():
+            result = self.result_future.result()
+            if result.status == GoalStatus.STATUS_SUCCEEDED:
+                self.logger.info("Navigation goal succeeded")
+                return py_trees.common.Status.SUCCESS
+            else:
+                self.logger.warning(f"Navigation goal failed with status: {result.status}")
+                return py_trees.common.Status.FAILURE
+
+        return py_trees.common.Status.RUNNING
+
+    def terminate(self, new_status):
+        """
+        Cancel the goal if the behavior is interrupted.
+        """
+        if self.goal_handle is not None and self.goal_handle.is_active:
+            self.logger.info("Cancelling navigation goal")
+            cancel_future = self.goal_handle.cancel_goal_async()
+            rclpy.spin_until_future_complete(self.node, cancel_future)
 
 
 class HeartbeatMonitor(py_trees.behaviour.Behaviour):
@@ -556,36 +618,18 @@ def create_battery_subtree():
 
 
 def create_main_task_subtree():
-    """Create the main robot task subtree"""
-    # Detect people and select target
     detect_people = DetectPeopleSubscriber()
     select_target = SelectTargetService()
     go_to_target = GoToTarget()
 
-    # Quiz state subscriber
-    quiz_state_subscriber = QuizStateSubscriber()
-
-    # Target reached check with timeout
-    target_reached = TargetReached()
-    target_reached_with_timeout = py_trees.decorators.Timeout(
-        name="TargetReachedTimeout",
-        child=target_reached,
-        duration=30.0
-    )
-
     # Quiz handling
     quiz_prompt = QuizPrompt()
     quiz_sequence = py_trees.composites.Sequence(name="QuizSequence")
-    quiz_sequence.add_children([target_reached_with_timeout, quiz_prompt])
-
-    # Select new target if quiz sequence fails
-    select_new_target = SelectNewTarget()
-    quiz_fallback = py_trees.composites.Selector(name="QuizFallback")
-    quiz_fallback.add_children([quiz_sequence, select_new_target])
+    quiz_sequence.add_children([go_to_target, quiz_prompt])
 
     # Main task sequence
     main_sequence = py_trees.composites.Sequence(name="MainSequence")
-    main_sequence.add_children([quiz_state_subscriber, detect_people, select_target, go_to_target, quiz_fallback])
+    main_sequence.add_children([detect_people, select_target, quiz_sequence])
 
     return main_sequence
 
